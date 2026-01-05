@@ -21,7 +21,7 @@ function parseCourses(coursesString) {
   return courses;
 }
 
-async function registerForCourse(browser, courseId, slots, saveClicks, courseIndex, storageState) {
+async function registerForCourse(browser, courseId, slots, saveClicks, courseIndex, storageState, useSharedSession) {
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
     storageState: storageState
@@ -48,7 +48,32 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
     const baseUrl = `https://wsp2.kbtu.kz/registration/student/${studentId}/schedule`;
     const courseUrl = `${baseUrl}/${courseId}`;
     
-    console.log(`🔐 [${courseId}] Использую готовую авторизацию...`);
+    if (!useSharedSession) {
+      // Отдельная авторизация для каждого курса
+      console.log(`🔐 [${courseId}] Авторизация...`);
+      await page.goto('https://wsp2.kbtu.kz', { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(300);
+
+      const loginButton = await page.locator('a:has-text("Вход"), button:has-text("Вход"), a:has-text("Войти"), button:has-text("Войти"), a:has-text("Login"), button:has-text("Login")').first();
+      await loginButton.click();
+      await page.waitForTimeout(500);
+
+      const loginSelector = 'input[name="login"], input[name="username"], input[name="user"], input[id="login"], input[id="username"], input[type="text"]';
+      const passwordSelector = 'input[name="password"], input[type="password"]';
+      
+      await page.waitForSelector(loginSelector, { timeout: 10000 });
+      await page.fill(loginSelector, process.env.KBTU_LOGIN);
+      await page.fill(passwordSelector, process.env.KBTU_PASSWORD);
+      await page.waitForTimeout(200);
+
+      await page.locator('button:has-text("Вход"), button:has-text("Войти"), input[type="submit"], button[type="submit"]').first().click();
+      await page.waitForLoadState('domcontentloaded');
+      await page.waitForTimeout(1000);
+      console.log(`✅ [${courseId}] Авторизация успешна`);
+    } else {
+      console.log(`🔐 [${courseId}] Использую готовую авторизацию...`);
+    }
+    
     await page.goto(courseUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1500);
 
@@ -228,14 +253,22 @@ async function main() {
   });
 
   try {
-    // Авторизуемся один раз и получаем storageState
-    const storageState = await login(browser);
+    const useSharedSession = process.env.SHARED_SESSION !== 'false';
+    let storageState = null;
+    
+    if (useSharedSession) {
+      // Авторизуемся один раз и получаем storageState
+      console.log('🔄 Режим: Общая сессия для всех курсов\n');
+      storageState = await login(browser);
+    } else {
+      console.log('🔄 Режим: Отдельный вход для каждого курса\n');
+    }
     
     const saveClicks = parseInt(process.env.SAVE_CLICKS) || 10;
     
-    // Запускаем регистрацию на все курсы параллельно с общим storageState
+    // Запускаем регистрацию на все курсы параллельно
     const registrationPromises = courses.map((course, index) => 
-      registerForCourse(browser, course.courseId, course.slots, saveClicks, index, storageState)
+      registerForCourse(browser, course.courseId, course.slots, saveClicks, index, storageState, useSharedSession)
     );
     
     const results = await Promise.all(registrationPromises);

@@ -207,7 +207,11 @@ async function main() {
   } catch (error) {
     console.error('\n❌ Произошла критическая ошибка:', error.message);
   } finally {
-    await browser.close();
+    if (process.env.HEADLESS === 'true') {
+      await browser.close();
+    } else {
+      console.log('\n💡 Браузер оставлен открытым (HEADLESS=false)');
+    }
     console.log('\n🏁 Завершено');
   }
 }

@@ -167,7 +167,9 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
       // Игнорируем
     }
   } finally {
-    await context.close();
+    if (process.env.HEADLESS === 'true') {
+      await context.close();
+    }
   }
 }
 

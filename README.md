@@ -7,6 +7,7 @@
 **Шаг 1:** Установите зависимости
 ```bash
 npm install
+npx playwright install chromium
 ```
 
 **Шаг 2:** Настройте файл `.env`

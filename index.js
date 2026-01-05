@@ -28,6 +28,14 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
   
   const page = await context.newPage();
   
+  const result = {
+    courseId,
+    success: false,
+    selectedSlots: 0,
+    alreadySelected: 0,
+    error: null
+  };
+  
   try {
     console.log(`\n${'='.repeat(60)}`);
     console.log(`📚 [Поток ${courseIndex + 1}] КУРС: ${courseId}`);
@@ -106,6 +114,9 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
 
     console.log(`\n📊 [${courseId}] Итого: выбрано ${selectedCount}, уже было выбрано ${alreadySelectedCount}\n`);
 
+    result.selectedSlots = selectedCount;
+    result.alreadySelected = alreadySelectedCount;
+
     // Сохранение
     const saveButton = page.locator('.schedule-menu-right button.el-button').first();
     await saveButton.waitFor({ state: 'attached', timeout: 5000 });
@@ -152,9 +163,11 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
     console.log(`📸 [${courseId}] Скриншот сохранен: ${screenshotPath}`);
 
     console.log(`\n✅ [${courseId}] Регистрация завершена!`);
+    result.success = true;
     
   } catch (error) {
     console.error(`\n❌ [${courseId}] Ошибка:`, error.message);
+    result.error = error.message;
     
     try {
       const errorDir = path.join(process.cwd(), 'screenshots', 'errors');
@@ -171,6 +184,8 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
       await context.close();
     }
   }
+  
+  return result;
 }
 
 async function main() {
@@ -199,11 +214,34 @@ async function main() {
     const registrationPromises = courses.map((course, index) => 
       registerForCourse(browser, course.courseId, course.slots, saveClicks, index)
     );
-
-    await Promise.all(registrationPromises);
+    
+    const results = await Promise.all(registrationPromises);
 
     console.log('\n' + '='.repeat(60));
     console.log('🎉 ВСЕ КУРСЫ ОБРАБОТАНЫ!');
+    console.log('='.repeat(60));
+    
+    // Сводка
+    console.log('\n📊 СВОДКА ПО КУРСАМ:\n');
+    
+    const successful = results.filter(r => r.success);
+    const failed = results.filter(r => !r.success);
+    
+    if (successful.length > 0) {
+      console.log('✅ УСПЕШНО:');
+      successful.forEach(r => {
+        console.log(`   - Курс ${r.courseId}: выбрано ${r.selectedSlots} слотов, уже было ${r.alreadySelected}`);
+      });
+    }
+    
+    if (failed.length > 0) {
+      console.log('\n❌ С ОШИБКАМИ:');
+      failed.forEach(r => {
+        console.log(`   - Курс ${r.courseId}: ${r.error}`);
+      });
+    }
+    
+    console.log(`\n📈 ИТОГО: ${successful.length} успешно, ${failed.length} ошибок из ${results.length} курсов\n`);
     console.log('='.repeat(60));
 
   } catch (error) {

@@ -21,9 +21,10 @@ function parseCourses(coursesString) {
   return courses;
 }
 
-async function registerForCourse(browser, courseId, slots, saveClicks, courseIndex) {
+async function registerForCourse(browser, courseId, slots, saveClicks, courseIndex, storageState) {
   const context = await browser.newContext({
-    viewport: { width: 1280, height: 720 }
+    viewport: { width: 1280, height: 720 },
+    storageState: storageState
   });
   
   const page = await context.newPage();
@@ -42,38 +43,18 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
     console.log(`🎯 Слоты для регистрации: ${slots.join(', ')}`);
     console.log(`${'='.repeat(60)}\n`);
 
-    // Авторизация
-    console.log(`🔐 [${courseId}] Авторизация...`);
-    await page.goto('https://wsp2.kbtu.kz', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(500);
-
-    const loginButton = await page.locator('a:has-text("Вход"), button:has-text("Вход"), a:has-text("Войти"), button:has-text("Войти"), a:has-text("Login"), button:has-text("Login")').first();
-    await loginButton.click();
-    await page.waitForTimeout(1000);
-
-    const loginSelector = 'input[name="login"], input[name="username"], input[name="user"], input[id="login"], input[id="username"], input[type="text"]';
-    const passwordSelector = 'input[name="password"], input[type="password"]';
-    
-    await page.waitForSelector(loginSelector, { timeout: 10000 });
-    await page.fill(loginSelector, process.env.KBTU_LOGIN);
-    await page.fill(passwordSelector, process.env.KBTU_PASSWORD);
-    await page.waitForTimeout(300);
-
-    await page.locator('button:has-text("Вход"), button:has-text("Войти"), input[type="submit"], button[type="submit"]').first().click();
-    await page.waitForTimeout(500);
-
-    await page.waitForLoadState('networkidle');
-    console.log(`✅ [${courseId}] Авторизация успешна`);
-
     // Переход на страницу курса
     const studentId = process.env.STUDENT_ID || '35519';
     const baseUrl = `https://wsp2.kbtu.kz/registration/student/${studentId}/schedule`;
     const courseUrl = `${baseUrl}/${courseId}`;
     
-    await page.goto(courseUrl, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(1000);
+    console.log(`🔐 [${courseId}] Использую готовую авторизацию...`);
+    await page.goto(courseUrl, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500);
 
     // Получаем все слоты
+    await page.waitForSelector('.schedule-row', { timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(500);
     const scheduleRows = await page.locator('.schedule-row').all();
     console.log(`📋 [${courseId}] Найдено ${scheduleRows.length} слотов\n`);
 
@@ -99,7 +80,7 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
           if (!isChecked) {
             const label = row.locator('label.el-checkbox').first();
             await label.click();
-            await page.waitForTimeout(200);
+            await page.waitForTimeout(100);
             selectedCount++;
             console.log(`✅ [${courseId}] Слот #${slotNumber}: ${lessonType.trim()} | ${teacher.trim()} | ${weekDay.trim()} ${time.trim()}`);
           } else {
@@ -119,7 +100,7 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
 
     // Сохранение
     const saveButton = page.locator('.schedule-menu-right button.el-button').first();
-    await saveButton.waitFor({ state: 'attached', timeout: 5000 });
+    await saveButton.waitFor({ state: 'attached', timeout: 15000 });
 
     let enabledClicks = 0;
     let disabledClicks = 0;
@@ -143,7 +124,7 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
           console.log(`  [${courseId}] ${i}. Клик (ENABLED)`);
         }
 
-        await page.waitForTimeout(800);
+        await page.waitForTimeout(300);
       } catch (e) {
         console.log(`  [${courseId}] ${i}. Ошибка: ${e.message}`);
       }
@@ -151,16 +132,18 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
 
     console.log(`\n📈 [${courseId}] Статистика кликов: ENABLED = ${enabledClicks}, DISABLED = ${disabledClicks}\n`);
 
-    // Создаем папку для скриншотов
-    const screenshotDir = path.join(process.cwd(), 'screenshots', courseId);
-    if (!fs.existsSync(screenshotDir)) {
-      fs.mkdirSync(screenshotDir, { recursive: true });
-    }
+    // Создаем скриншот если включено
+    if (process.env.SCREENSHOTS === 'true') {
+      const screenshotDir = path.join(process.cwd(), 'screenshots', courseId);
+      if (!fs.existsSync(screenshotDir)) {
+        fs.mkdirSync(screenshotDir, { recursive: true });
+      }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const screenshotPath = path.join(screenshotDir, `success_${timestamp}.png`);
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    console.log(`📸 [${courseId}] Скриншот сохранен: ${screenshotPath}`);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const screenshotPath = path.join(screenshotDir, `success_${timestamp}.png`);
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      console.log(`📸 [${courseId}] Скриншот сохранен: ${screenshotPath}`);
+    }
 
     console.log(`\n✅ [${courseId}] Регистрация завершена!`);
     result.success = true;
@@ -188,6 +171,43 @@ async function registerForCourse(browser, courseId, slots, saveClicks, courseInd
   return result;
 }
 
+async function login(browser) {
+  console.log('🔐 Выполняю авторизацию...');
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const page = await context.newPage();
+  
+  try {
+    await page.goto('https://wsp2.kbtu.kz', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(300);
+
+    const loginButton = await page.locator('a:has-text("Вход"), button:has-text("Вход"), a:has-text("Войти"), button:has-text("Войти"), a:has-text("Login"), button:has-text("Login")').first();
+    await loginButton.click();
+    await page.waitForTimeout(500);
+
+    const loginSelector = 'input[name="login"], input[name="username"], input[name="user"], input[id="login"], input[id="username"], input[type="text"]';
+    const passwordSelector = 'input[name="password"], input[type="password"]';
+    
+    await page.waitForSelector(loginSelector, { timeout: 10000 });
+    await page.fill(loginSelector, process.env.KBTU_LOGIN);
+    await page.fill(passwordSelector, process.env.KBTU_PASSWORD);
+    await page.waitForTimeout(200);
+
+    await page.locator('button:has-text("Вход"), button:has-text("Войти"), input[type="submit"], button[type="submit"]').first().click();
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(1000);
+
+    // Получаем полное состояние (cookies + localStorage)
+    const storageState = await context.storageState();
+    console.log('✅ Авторизация успешна, состояние сохранено\n');
+    
+    await context.close();
+    return storageState;
+  } catch (error) {
+    await context.close();
+    throw error;
+  }
+}
+
 async function main() {
   console.log('🚀 Запуск автоматической регистрации на курсы KBTU\n');
 
@@ -208,11 +228,14 @@ async function main() {
   });
 
   try {
+    // Авторизуемся один раз и получаем storageState
+    const storageState = await login(browser);
+    
     const saveClicks = parseInt(process.env.SAVE_CLICKS) || 10;
     
-    // Запускаем регистрацию на все курсы параллельно
+    // Запускаем регистрацию на все курсы параллельно с общим storageState
     const registrationPromises = courses.map((course, index) => 
-      registerForCourse(browser, course.courseId, course.slots, saveClicks, index)
+      registerForCourse(browser, course.courseId, course.slots, saveClicks, index, storageState)
     );
     
     const results = await Promise.all(registrationPromises);

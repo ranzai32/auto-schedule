@@ -1,0 +1,24 @@
+{
+  "name": "web-page-monitor",
+  "version": "1.0.0",
+  "description": "Production-ready web page monitoring with Telegram notifications",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "monitor",
+    "telegram",
+    "playwright",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "dotenv": "^16.3.1",
+    "node-fetch": "^3.3.2"
+  }
+}
